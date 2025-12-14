@@ -1,0 +1,79 @@
+name: weekly-security-audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 毎週月曜 09:00 JST = 00:00 UTC
+    - cron: "0 0 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 監視用リポジトリをcheckout
+        uses: actions/checkout@v4
+
+      - name: Node.js を準備
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Python を準備
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: corepack を有効化（yarn/pnpmのため）
+        run: corepack enable
+
+      - name: pnpm を入れる（pnpmプロジェクトがあるため）
+        run: npm i -g pnpm
+
+      - name: 各リポジトリを監査してレポート作成
+        env:
+          TOKEN: ${{ secrets.AUDIT_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > report.txt
+
+          mkdir -p work
+
+          while IFS= read -r REPO; do
+            [ -z "$REPO" ] && continue
+            echo "==> $REPO"
+
+            rm -rf work/repo work/out
+            mkdir -p work/out
+
+            # 他repoをclone（TOKENが鍵）
+            git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${REPO}.git" work/repo
+
+            # audit実行（JSONを work/out/audit.json に出す）
+            bash scripts/audit_repo.sh work/repo work/out
+
+            # JSONがある時だけ解析して追記（日本語メッセージ）
+            if [ -f work/out/audit.json ]; then
+              REPO="$REPO" python3 scripts/parse_audit.py work/out/audit.json >> report.txt
+            else
+              echo "⚠️ $REPO: audit.json が作られませんでした（lockfile無し等の可能性）" >> report.txt
+            fi
+
+            echo "" >> report.txt
+          done < repos.txt
+
+      - name: Slack に通知
+        if: always()
+        env:
+          SLACK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          BODY="$(head -n 200 report.txt | sed 's/"/\\"/g')"
+          payload=$(printf '{"text":"%s"}' "$(echo -e "🛡️ 依存関係の定期セキュリティチェック（今週分）\n実行ログ: ${RUN_URL}\n\n${BODY}")")
+          curl -sS -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK" >/dev/null
