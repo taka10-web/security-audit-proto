@@ -30,9 +30,6 @@ jobs:
       - name: corepack を有効化（yarn/pnpmのため）
         run: corepack enable
 
-      - name: pnpm を入れる（pnpmプロジェクトがあるため）
-        run: npm i -g pnpm
-
       - name: 各リポジトリを監査してレポート作成
         env:
           TOKEN: ${{ secrets.AUDIT_TOKEN }}
