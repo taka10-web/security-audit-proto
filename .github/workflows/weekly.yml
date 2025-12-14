@@ -61,7 +61,7 @@ jobs:
             fi
 
             echo "" >> report.txt
-          done < repos.txt
+          done < report.txt
 
       - name: Slack に通知
         if: always()
