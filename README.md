@@ -51,8 +51,7 @@
 例:
 
 ```
-taka10-web/cafes-app
-taka10-web/Yelpcamp
+github-user-name/my-app
 ```
 
 ---
